@@ -8,9 +8,9 @@ jobs:
   runs-on: ubuntu-latest
   
   env:
-    AWS_REGION: eu-west-2
+    AWS_REGION: us-east-1
     STACK_NAME: helpin-stack
-    TEMPLATE_FILE: HelpInStack.yaml
+    TEMPLATE_FILE: helpin-core-stack.yaml
     
   steps:
     - name: Checkout Repository
@@ -27,12 +27,12 @@ jobs:
       run: ls -R
       working-directory: ${{ github.workspace }}
 
-    - name: Validate HelpIn Template
+    - name: Validate HelpIn Core Template
       run: |
         aws cloudformation validate-template \
           --template-body file://${{ env.TEMPLATE_FILE }}
 
-    - name: Deploy HelpIn Stack
+    - name: Deploy HelpIn Core Stack
       run: |
         set: -e
         set: -x
