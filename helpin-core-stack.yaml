@@ -2,15 +2,15 @@ AWSTemplateFormatVersion: '2010-09-09'
 
 Description: >
   HelpIn Core Stack:
-    - VPC with public, private app, and private data subnets across two Availability Zones
-    - Internet Gateway, one NAT Gateway, and route tables
-    - S3 Gateway VPC endpoint for private app subnet access to S3
-    - Security groups for Lambda and RDS MySQL
+    - VPC with public, private application, and private data subnets across two Availability Zones
+    - Internet Gateway, one NAT Gateway, and separate route tables
+    - S3 Gateway VPC endpoint for private access to Amazon S3
+    - Security groups for Lambda functions and Amazon RDS MySQL
     - Amazon RDS MySQL Multi-AZ database instance in private data subnets
-    - S3 assets bucket with versioning and lifecycle rules
-    - S3 Lambda deployment bucket for ZIP packages
+    - Amazon S3 assets bucket with versioning, KMS encryption, and lifecycle rules
+    - Amazon S3 deployment bucket for Lambda ZIP packages
     - Amazon Cognito User Pool, App Client, Admin group, and User group
-    - AWS Secrets Manager secret for RDS credentials
+    - AWS Secrets Manager secret for RDS credentials using KMS encryption
 
 Parameters:
 
@@ -18,6 +18,8 @@ Parameters:
     Type: String
     Default: helpin
     Description: Project name used for resource names and tags
+    AllowedPattern: '^[a-z][a-z0-9-]*$'
+    ConstraintDescription: Use lowercase letters, numbers, and hyphens, beginning with a letter
 
   VpcCidr:
     Type: String
@@ -27,32 +29,32 @@ Parameters:
   PublicSubnet1Cidr:
     Type: String
     Default: 10.0.1.0/24
-    Description: CIDR block for public subnet 1
+    Description: CIDR block for public subnet A
 
   PublicSubnet2Cidr:
     Type: String
     Default: 10.0.2.0/24
-    Description: CIDR block for public subnet 2
+    Description: CIDR block for public subnet B
 
   PrivateAppSubnet1Cidr:
     Type: String
     Default: 10.0.10.0/24
-    Description: CIDR block for private app subnet 1
+    Description: CIDR block for private application subnet A
 
   PrivateAppSubnet2Cidr:
     Type: String
-    Default: 10.0.11.0/24
-    Description: CIDR block for private app subnet 2
+    Default: 10.0.20.0/24
+    Description: CIDR block for private application subnet B
 
   PrivateDataSubnet1Cidr:
     Type: String
-    Default: 10.0.20.0/24
-    Description: CIDR block for private data subnet 1
+    Default: 10.0.11.0/24
+    Description: CIDR block for private data subnet A
 
   PrivateDataSubnet2Cidr:
     Type: String
     Default: 10.0.21.0/24
-    Description: CIDR block for private data subnet 2
+    Description: CIDR block for private data subnet B
 
   DBName:
     Type: String
@@ -67,9 +69,7 @@ Parameters:
     Description: RDS MySQL instance class
     AllowedValues:
       - db.t3.micro
-      - db.t4g.micro
       - db.t3.small
-      - db.t4g.small
 
   DBAllocatedStorage:
     Type: Number
@@ -83,7 +83,7 @@ Parameters:
     Default: 7
     MinValue: 1
     MaxValue: 35
-    Description: Number of days to keep automated RDS backups
+    Description: Number of days to retain automated RDS backups
 
 Resources:
 
@@ -231,7 +231,7 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
 
   ############################################################
-  # NAT Gateway + Private App Routing
+  # NAT Gateway + Private Application Routing
   ############################################################
 
   NatEip:
@@ -313,7 +313,7 @@ Resources:
       RouteTableId: !Ref PrivateDataRouteTable
 
   ############################################################
-  # VPC Endpoint for S3
+  # S3 Gateway VPC Endpoint
   ############################################################
 
   S3GatewayEndpoint:
@@ -352,7 +352,7 @@ Resources:
   RDSSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Security group for HelpIn RDS MySQL database
+      GroupDescription: Security group for the HelpIn RDS MySQL database
       VpcId: !Ref HelpInVPC
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -367,13 +367,20 @@ Resources:
           Value: !Ref ProjectName
 
   ############################################################
-  # S3 Buckets
+  # S3 Assets Bucket - KMS Encryption + Lifecycle
   ############################################################
 
   HelpInAssetsBucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       BucketName: !Sub '${ProjectName}-assets-${AWS::AccountId}-${AWS::Region}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+            BucketKeyEnabled: true
       VersioningConfiguration:
         Status: Enabled
       PublicAccessBlockConfiguration:
@@ -385,44 +392,56 @@ Resources:
         Rules:
           - Id: MoveOldObjectsToLowerCostStorage
             Status: Enabled
-            Filter:
-              Prefix: old/
+            Prefix: old/
             Transitions:
               - StorageClass: STANDARD_IA
                 TransitionInDays: 30
               - StorageClass: GLACIER
                 TransitionInDays: 90
+
           - Id: ArchiveBackupExports
             Status: Enabled
-            Filter:
-              Prefix: backups/
+            Prefix: backups/
             Transitions:
               - StorageClass: GLACIER
                 TransitionInDays: 90
+
           - Id: DeleteTemporaryFiles
             Status: Enabled
-            Filter:
-              Prefix: temp/
+            Prefix: temp/
             ExpirationInDays: 30
+
           - Id: ArchiveNoncurrentVersions
             Status: Enabled
-            Filter:
-              Prefix: ''
+            Prefix: ''
             NoncurrentVersionTransitions:
               - StorageClass: STANDARD_IA
-                NoncurrentDays: 30
+                TransitionInDays: 30
               - StorageClass: GLACIER
-                NoncurrentDays: 90
+                TransitionInDays: 90
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 365
       Tags:
         - Key: Name
           Value: !Sub '${ProjectName}-assets-bucket'
         - Key: Project
           Value: !Ref ProjectName
 
+  ############################################################
+  # S3 Lambda ZIP Deployment Bucket - KMS Encryption
+  ############################################################
+
   HelpInLambdaDeploymentBucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       BucketName: !Sub '${ProjectName}-lambda-deployment-${AWS::AccountId}-${AWS::Region}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+            BucketKeyEnabled: true
       VersioningConfiguration:
         Status: Enabled
       PublicAccessBlockConfiguration:
@@ -432,10 +451,9 @@ Resources:
         RestrictPublicBuckets: true
       LifecycleConfiguration:
         Rules:
-          - Id: ExpireOldLambdaPackages
+          - Id: ExpireOldLambdaPackageVersions
             Status: Enabled
-            Filter:
-              Prefix: lambda/
+            Prefix: lambda/
             NoncurrentVersionExpiration:
               NoncurrentDays: 30
       Tags:
@@ -445,19 +463,21 @@ Resources:
           Value: !Ref ProjectName
 
   ############################################################
-  # Secrets Manager - RDS Credentials
+  # Secrets Manager - KMS-Encrypted RDS Credentials
   ############################################################
 
   HelpInDBSecret:
     Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       Name: !Sub '${ProjectName}/rds/mysql/master'
       Description: HelpIn RDS MySQL master credentials
       GenerateSecretString:
         SecretStringTemplate: '{"username":"helpinadmin"}'
         GenerateStringKey: password
-        PasswordLength: 16
-        ExcludePunctuation: true
+        PasswordLength: 20
+        ExcludeCharacters: '"@/\\'
       Tags:
         - Key: Name
           Value: !Sub '${ProjectName}-rds-secret'
@@ -465,7 +485,7 @@ Resources:
           Value: !Ref ProjectName
 
   ############################################################
-  # RDS MySQL Multi-AZ Database
+  # RDS MySQL Multi-AZ Database - KMS Encryption
   ############################################################
 
   HelpInDBSubnetGroup:
@@ -497,6 +517,8 @@ Resources:
       MultiAZ: true
       PubliclyAccessible: false
       BackupRetentionPeriod: !Ref DBBackupRetentionDays
+      CopyTagsToSnapshot: true
+      DeleteAutomatedBackups: true
       DBSubnetGroupName: !Ref HelpInDBSubnetGroup
       VPCSecurityGroups:
         - !Ref RDSSecurityGroup
@@ -538,11 +560,6 @@ Resources:
           TemporaryPasswordValidityDays: 7
       AdminCreateUserConfig:
         AllowAdminCreateUserOnly: false
-      Schema:
-        - Name: email
-          AttributeDataType: String
-          Mutable: true
-          Required: false
       UserPoolTags:
         Project: !Ref ProjectName
 
@@ -590,37 +607,37 @@ Outputs:
       Name: !Sub '${AWS::StackName}-VpcId'
 
   PublicSubnet1Id:
-    Description: Public subnet 1 ID
+    Description: Public subnet A ID
     Value: !Ref PublicSubnet1
     Export:
       Name: !Sub '${AWS::StackName}-PublicSubnet1Id'
 
   PublicSubnet2Id:
-    Description: Public subnet 2 ID
+    Description: Public subnet B ID
     Value: !Ref PublicSubnet2
     Export:
       Name: !Sub '${AWS::StackName}-PublicSubnet2Id'
 
   PrivateAppSubnet1Id:
-    Description: Private app subnet 1 ID for Lambda
+    Description: Private application subnet A ID for Lambda
     Value: !Ref PrivateAppSubnet1
     Export:
       Name: !Sub '${AWS::StackName}-PrivateAppSubnet1Id'
 
   PrivateAppSubnet2Id:
-    Description: Private app subnet 2 ID for Lambda
+    Description: Private application subnet B ID for Lambda
     Value: !Ref PrivateAppSubnet2
     Export:
       Name: !Sub '${AWS::StackName}-PrivateAppSubnet2Id'
 
   PrivateDataSubnet1Id:
-    Description: Private data subnet 1 ID for RDS
+    Description: Private data subnet A ID for RDS
     Value: !Ref PrivateDataSubnet1
     Export:
       Name: !Sub '${AWS::StackName}-PrivateDataSubnet1Id'
 
   PrivateDataSubnet2Id:
-    Description: Private data subnet 2 ID for RDS
+    Description: Private data subnet B ID for RDS
     Value: !Ref PrivateDataSubnet2
     Export:
       Name: !Sub '${AWS::StackName}-PrivateDataSubnet2Id'
@@ -649,7 +666,7 @@ Outputs:
     Export:
       Name: !Sub '${AWS::StackName}-DBEndpointPort'
 
-  DBName:
+  DatabaseName:
     Description: HelpIn database name
     Value: !Ref DBName
     Export:
