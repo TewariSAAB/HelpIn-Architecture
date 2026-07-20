@@ -7,13 +7,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    env:
-      AWS_REGION: us-east-1
-      STACK_NAME: helpin-core-stack
-      TEMPLATE_FILE: helpin-core-stack.yaml
-
     steps:
-      - name: Checkout Repository
+      - name: Checkout Repo
         uses: actions/checkout@v4
 
       - name: Configure AWS Credentials
@@ -22,42 +17,32 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: us-east-1
 
-      - name: List Project Files
+      - name: List Files
         run: ls -R
         working-directory: ${{ github.workspace }}
 
-      - name: Validate HelpIn Core Template
+      - name: Validate CloudFormation Template
         run: |
           aws cloudformation validate-template \
-            --template-body file://${{ env.TEMPLATE_FILE }}
+            --template-body file://helpin-core-stack.yaml
 
-      - name: Deploy HelpIn Core Stack
+      - name: Deploy CloudFormation Stack
         run: |
           set -e
           set -x
+          ls -la
 
           aws cloudformation deploy \
-            --stack-name ${{ env.STACK_NAME }} \
-            --template-file ${{ env.TEMPLATE_FILE }} \
-            --region ${{ env.AWS_REGION }} \
+            --stack-name helpin-core-stack \
+            --template-file helpin-core-stack.yaml \
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset
-
-      - name: Show Stack Outputs
-        if: success()
-        run: |
-          aws cloudformation describe-stacks \
-            --stack-name ${{ env.STACK_NAME }} \
-            --region ${{ env.AWS_REGION }} \
-            --query "Stacks[0].Outputs" \
-            --output table
 
       - name: Fetch Stack Events on Failure
         if: failure()
         run: |
           aws cloudformation describe-stack-events \
-            --stack-name ${{ env.STACK_NAME }} \
-            --region ${{ env.AWS_REGION }} \
-            --max-items 30
+            --stack-name helpin-core-stack \
+            --max-items 20
