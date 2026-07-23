@@ -1,15 +1,11 @@
 exports.handler = async (event) => {
-  const failures = [];
+  console.log("Event received:", JSON.stringify(event, null, 2));
 
   for (const record of event.Records || []) {
-    try {
-      const message = JSON.parse(record.body);
-      console.log('Processing HelpIn event:', JSON.stringify(message));
-    } catch (error) {
-      console.error('Failed to process message:', error);
-      failures.push({ itemIdentifier: record.messageId });
-    }
+    console.log("SQS message body:", record.body);
   }
 
-  return { batchItemFailures: failures };
+  return {
+    batchItemFailures: []
+  };
 };
