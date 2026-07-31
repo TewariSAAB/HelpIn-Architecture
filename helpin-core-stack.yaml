@@ -372,8 +372,8 @@ Resources:
 
   HelpInAssetsBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       BucketName: !Sub '${ProjectName}-assets-${AWS::AccountId}-${AWS::Region}'
       BucketEncryption:
@@ -433,8 +433,8 @@ Resources:
 
   HelpInLambdaDeploymentBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       BucketName: !Sub '${ProjectName}-lambda-deployment-${AWS::AccountId}-${AWS::Region}'
       BucketEncryption:
@@ -468,8 +468,8 @@ Resources:
 
   HelpInDBSecret:
     Type: AWS::SecretsManager::Secret
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       Name: !Sub '${ProjectName}/rds/mysql/master'
       Description: HelpIn RDS MySQL master credentials
@@ -504,8 +504,8 @@ Resources:
 
   HelpInDBInstance:
     Type: AWS::RDS::DBInstance
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       DBInstanceIdentifier: !Sub '${ProjectName}-mysql-db'
       DBName: !Ref DBName
